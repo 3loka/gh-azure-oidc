@@ -15,7 +15,7 @@ import (
 func main() {
 
 	// cmd.Execute()
-	
+
 	fmt.Println("hi world, this is the gh-azure-oidc extension!")
 	client, err := gh.RESTClient(nil)
 	if err != nil {
@@ -48,8 +48,9 @@ func main() {
 	fmt.Println("You will be redirected to Browser for login. Please complete the login and come back to the terminal")
 	time.Sleep(3 * time.Second)
 
-	accessToken := azureapi.Authenticate()
-	tenantMap := azureapi.GetAllTenantsMap(accessToken)
+	token := azureapi.Authenticate()
+
+	tenantMap := azureapi.GetAllTenantsMap(token.AccessToken)
 
 	directoryContent := promptContent{
 		fmt.Sprintf("Choose your Azure Directory? "),
@@ -64,7 +65,7 @@ func main() {
 	directoryName := promptGetSelect(directoryContent, tenantArray)
 	fmt.Println("Selected Directory: " + directoryName)
 
-	subMap := azureapi.GetAllSubscriptions(accessToken)
+	subMap := azureapi.GetAllSubscriptions(token.AccessToken)
 
 	subcontent := promptContent{
 		fmt.Sprintf("Choose your Azure Subscription? "),
@@ -91,7 +92,7 @@ func main() {
 			fmt.Sprintf("Choose your Azure Resource Group associated to the subscription? "),
 			fmt.Sprintf("Choose your Azure Resource Group associated to the subscription? "),
 		}
-		rgMap := azureapi.GetResourceGroupsPerSubscription(accessToken, key)
+		rgMap := azureapi.GetResourceGroupsPerSubscription(token.AccessToken, key)
 
 		rgArr := make([]string, 0, len(rgMap))
 		for ind, _ := range rgMap {
@@ -103,18 +104,21 @@ func main() {
 	} else {
 		rName := org + "-" + repo
 		fmt.Println("Creating Resource Group " + rName)
-		azureapi.CreateResourceGroup(accessToken, key, rName)
+		azureapi.CreateResourceGroup(token.AccessToken, key, rName)
 	}
+
+	newToken := azureapi.GetTokenWithTenantScope(token.RefreshToken)
 
 	//Create Azure Resources
 	fmt.Println("Creating Azure Application")
 	time.Sleep(2 * time.Second)
-	appId := azureapi.CreateAzureApplication(accessToken, repo)
+	fmt.Println(newToken.AccessToken)
+	appId := azureapi.CreateAzureApplication(newToken.AccessToken, repo)
 
 	//Create SP
 	fmt.Println("Creating Service Principal")
 	time.Sleep(2 * time.Second)
-	azureapi.CreateServicePrincipal(accessToken, appId)
+	azureapi.CreateServicePrincipal(newToken.AccessToken, appId)
 
 	//Create FIC
 	fmt.Println("Creating Federated Identity Credentials")

@@ -29,7 +29,7 @@ func GetTokens(c AuthorizationConfig, authCode models.AuthorizationCode, scope s
 	formVals.Set("grant_type", "authorization_code")
 	formVals.Set("redirect_uri", c.RedirectURL())
 	// formVals.Set("aud", "https://graph.microsoft.com")
-	formVals.Set("scope", scope)
+	formVals.Set("scope", scope+" offline_access ") //https://graph.microsoft.com/Application.ReadWrite.All https://graph.microsoft.com/User.Read")
 	if c.ClientSecret != "" {
 		formVals.Set("client_secret", c.ClientSecret)
 	}
@@ -41,6 +41,8 @@ func GetTokens(c AuthorizationConfig, authCode models.AuthorizationCode, scope s
 		return t, errors.Wrap(err, "error while trying to get tokens")
 	}
 	body, err := ioutil.ReadAll(response.Body)
+
+	fmt.Println(string(body))
 
 	if err != nil {
 		return t, errors.Wrap(err, "error while trying to read token json body")
@@ -108,6 +110,18 @@ func LoginRequest(c AuthorizationConfig) (token models.AuthorizationCode) {
 		panic(errors.Wrap(err, "Error while opening login URL"))
 
 	}
+
+	// uri1, _ := url.Parse("https://login.microsoftonline.com/2eb75ec2-bed1-41fd-8016-a4e0a0a7072f/adminconsent?client_id=92aa3738-61c4-44e6-b8ed-4e7a0936e8fc")
+	// formVals1 := url.Values{}
+	// uri.RawQuery = formVals1.Encode()
+
+	// cmd1 := exec.Command(c.OpenCMD, uri1.String())
+	// err1 := cmd1.Start()
+	// if err1 != nil {
+	// 	panic(errors.Wrap(err, "Error while opening login URL"))
+
+	// }
+
 	running := true
 	srv := startLocalListener(c, &token)
 	for running {
