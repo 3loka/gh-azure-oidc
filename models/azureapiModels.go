@@ -30,5 +30,19 @@ type ResourceGroupListResponseValue struct {
 }
 
 type AzureApplicationResponse struct {
+	Id    string `json:"id"`
 	AppId string `json:"appId"`
+}
+
+type ServicePrincipalResponse struct {
+	Id                    string `json:"id"`
+	AppId                 string `json:"appId"`
+	ServicePrincipalNames string `json:"servicePrincipalNames"`
+	DisplayName           string `json:"displayName"`
+}
+
+type CreateResourceGroupResponse struct {
+	Id       string `json:"id"`
+	Name     string `json:"name"`
+	Location string `json:"location"`
 }

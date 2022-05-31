@@ -11,9 +11,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/pkg/errors"
-
 	"github.com/3loka/gh-azure-oidc/models"
+	"github.com/pkg/errors"
 )
 
 // AuthorizationURL is the endpoint used for intial login/auth
@@ -28,7 +27,6 @@ func GetTokens(c AuthorizationConfig, authCode models.AuthorizationCode, scope s
 	formVals.Set("code", authCode.Value)
 	formVals.Set("grant_type", "authorization_code")
 	formVals.Set("redirect_uri", c.RedirectURL())
-	// formVals.Set("aud", "https://graph.microsoft.com")
 	formVals.Set("scope", scope+" offline_access ") //https://graph.microsoft.com/Application.ReadWrite.All https://graph.microsoft.com/User.Read")
 	if c.ClientSecret != "" {
 		formVals.Set("client_secret", c.ClientSecret)
@@ -41,9 +39,6 @@ func GetTokens(c AuthorizationConfig, authCode models.AuthorizationCode, scope s
 		return t, errors.Wrap(err, "error while trying to get tokens")
 	}
 	body, err := ioutil.ReadAll(response.Body)
-
-	fmt.Println(string(body))
-
 	if err != nil {
 		return t, errors.Wrap(err, "error while trying to read token json body")
 	}
@@ -52,28 +47,92 @@ func GetTokens(c AuthorizationConfig, authCode models.AuthorizationCode, scope s
 	if err != nil {
 		return t, errors.Wrap(err, "error while trying to parse token json body")
 	}
-
-	// fmt.Println(body)
 	return
 }
 
 // startLocalListener opens an http server to retrieve the redirect from initial
 // authentication and set the authorization code's value
-func startLocalListener(c AuthorizationConfig, token *models.AuthorizationCode) *http.Server {
+func startLocalListenerWithImplicitFlow(c AuthorizationConfig, token *models.AuthorizationCode) *http.Server {
+	http.DefaultServeMux = new(http.ServeMux)
 	srv := &http.Server{Addr: fmt.Sprintf(":%s", c.RedirectPort)}
 
 	http.HandleFunc(c.RedirectPath, func(w http.ResponseWriter, r *http.Request) {
+		// hello := "hello"
+		fmt.Fprintf(w, `<html>
+            <head>
+            </head>
+            <body>
+            <h1>Thanks for completing the login process. You can now close this window</h1>
+            <div id="output"></div>
+            <script type="text/javascript">
+			  if (window.location.hash !== "") {
+    				window.location.replace(window.location.pathname + "?" + window.location.hash.substring(1));
+  				}
+            </script>
+            </body>
+            </html>`)
+
+		err := r.ParseForm()
+		if err != nil {
+			log.Fatalf("Error while parsing form from response %s", err)
+			return
+		}
+
+		for k, v := range r.Form {
+
+			if k == "access_token" {
+				token.AccessToken = strings.Join(v, "")
+			}
+		}
+
+	})
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			// cannot panic, because this probably is an intentional close
+			// log.Printf("Httpserver: ListenAndServe() error: %s", err)
+		}
+	}()
+
+	// fmt.Println("server started")
+
+	// returning reference so caller can call Shutdown()
+	return srv
+}
+
+// startLocalListener opens an http server to retrieve the redirect from initial
+// authentication and set the authorization code's value
+func startLocalListener(c AuthorizationConfig, token *models.AuthorizationCode) *http.Server {
+	http.DefaultServeMux = new(http.ServeMux)
+	srv := &http.Server{Addr: fmt.Sprintf(":%s", c.RedirectPort)}
+
+	http.HandleFunc(c.RedirectPath, func(w http.ResponseWriter, r *http.Request) {
+		hello := "hello"
+		fmt.Fprintf(w, `<html>
+            <head>
+            </head>
+            <body>
+            <h1>Go Timer (ticks every second!)</h1>
+            <div id="output"></div>
+            <script type="text/javascript">
+            console.log("`+hello+`");
+            </script>
+            </body>
+            </html>`)
+
 		err := r.ParseForm()
 		if err != nil {
 			log.Fatalf("Error while parsing form from response %s", err)
 			return
 		}
 		for k, v := range r.Form {
+
 			if k == "code" {
 				token.Value = strings.Join(v, "")
 			}
+
 		}
-		// fmt.Println(token.Value)
+
 		fmt.Fprintf(w, "Auth done, you can close this window")
 	})
 
@@ -90,6 +149,63 @@ func startLocalListener(c AuthorizationConfig, token *models.AuthorizationCode) 
 	return srv
 }
 
+func LoginRequestWithImplicitFlow(c AuthorizationConfig) (token models.AuthorizationCode) {
+	return loginRequestWithImplicitFlowInternal(c, false, "common")
+}
+
+func LoginRequestWithImplicitFlowWithTenant(c AuthorizationConfig, tenantId string) (token models.AuthorizationCode) {
+	return loginRequestWithImplicitFlowInternal(c, true, tenantId)
+}
+
+// LoginRequest asks the os to open the login URL and starts a listening on the
+// configured port for the authorizaton code. This is used on initial login to
+// get the initial token pairs
+func loginRequestWithImplicitFlowInternal(c AuthorizationConfig, tenant bool, tenantId string) (token models.AuthorizationCode) {
+	formVals := url.Values{}
+	// formVals.Set("grant_type", "authorization_code")
+	formVals.Set("redirect_uri", c.RedirectURL())
+
+	formVals.Set("response_type", "token")
+	// formVals.Set("response_mode", "query")
+	if tenant {
+		// formVals.Set("prompt", "none")
+		formVals.Set("scope", "Application.ReadWrite.All")
+	} else {
+		formVals.Set("scope", c.Scope+" ")
+	}
+	formVals.Set("client_id", c.ClientID)
+	var urlToUse = AuthorizationURL
+
+	if tenant {
+		urlToUse = fmt.Sprintf("https://login.microsoftonline.com/%v/oauth2/v2.0/authorize", tenantId)
+	}
+
+	// fmt.Println("URLL TEnant" + urlToUse)
+	uri, _ := url.Parse(urlToUse)
+	uri.RawQuery = formVals.Encode()
+
+	cmd := exec.Command(c.OpenCMD, uri.String())
+	err := cmd.Start()
+	if err != nil {
+		panic(errors.Wrap(err, "Error while opening login URL"))
+
+	}
+
+	running := true
+	srv := startLocalListenerWithImplicitFlow(c, &token)
+
+	for running {
+		if token.AccessToken != "" {
+			if err := srv.Shutdown(context.TODO()); err != nil {
+				// fmt.Println(err)
+				// panic(err) // failure/timeout shutting down the server gracefully
+			}
+			running = false
+		}
+	}
+	return
+}
+
 // LoginRequest asks the os to open the login URL and starts a listening on the
 // configured port for the authorizaton code. This is used on initial login to
 // get the initial token pairs
@@ -97,6 +213,7 @@ func LoginRequest(c AuthorizationConfig) (token models.AuthorizationCode) {
 	formVals := url.Values{}
 	formVals.Set("grant_type", "authorization_code")
 	formVals.Set("redirect_uri", c.RedirectURL())
+
 	formVals.Set("scope", c.Scope)
 	formVals.Set("response_type", "code")
 	formVals.Set("response_mode", "query")
@@ -111,19 +228,9 @@ func LoginRequest(c AuthorizationConfig) (token models.AuthorizationCode) {
 
 	}
 
-	// uri1, _ := url.Parse("https://login.microsoftonline.com/2eb75ec2-bed1-41fd-8016-a4e0a0a7072f/adminconsent?client_id=92aa3738-61c4-44e6-b8ed-4e7a0936e8fc")
-	// formVals1 := url.Values{}
-	// uri.RawQuery = formVals1.Encode()
-
-	// cmd1 := exec.Command(c.OpenCMD, uri1.String())
-	// err1 := cmd1.Start()
-	// if err1 != nil {
-	// 	panic(errors.Wrap(err, "Error while opening login URL"))
-
-	// }
-
 	running := true
 	srv := startLocalListener(c, &token)
+
 	for running {
 		if token.Value != "" {
 			if err := srv.Shutdown(context.TODO()); err != nil {

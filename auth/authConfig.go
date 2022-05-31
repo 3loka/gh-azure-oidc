@@ -8,7 +8,7 @@ import (
 var DefaultConfig = AuthorizationConfig{
 	RedirectPort: "8080",
 	RedirectPath: "/myapp",
-	Scope:        "https://graph.microsoft.com/.default",
+	Scope:        "https://management.azure.com/.default",
 	OpenCMD:      "open",
 }
 

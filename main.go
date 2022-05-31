@@ -46,9 +46,13 @@ func main() {
 	// fmt.Println(*repo)
 
 	fmt.Println("You will be redirected to Browser for login. Please complete the login and come back to the terminal")
-	time.Sleep(3 * time.Second)
+	time.Sleep(2 * time.Second)
 
-	token := azureapi.Authenticate()
+	token := azureapi.AuthenticateWithImplicitFlow()
+
+	// token := azureapi.Authenticate()
+
+	fmt.Println("Getting all tenants")
 
 	tenantMap := azureapi.GetAllTenantsMap(token.AccessToken)
 
@@ -64,6 +68,7 @@ func main() {
 
 	directoryName := promptGetSelect(directoryContent, tenantArray)
 	fmt.Println("Selected Directory: " + directoryName)
+	tenantId := tenantMap[directoryName]
 
 	subMap := azureapi.GetAllSubscriptions(token.AccessToken)
 
@@ -87,6 +92,8 @@ func main() {
 	}
 	createRgDecision := promptGetSelect(createRg, []string{"Yes", "No"})
 
+	var resourceGroupId = ""
+
 	if createRgDecision == "No" {
 		rgContent := promptContent{
 			fmt.Sprintf("Choose your Azure Resource Group associated to the subscription? "),
@@ -101,28 +108,36 @@ func main() {
 
 		rgName := promptGetSelect(rgContent, rgArr)
 		fmt.Println("Selected Resource Group: " + rgName)
+		resourceGroupId = rgName
 	} else {
 		rName := org + "-" + repo
 		fmt.Println("Creating Resource Group " + rName)
-		azureapi.CreateResourceGroup(token.AccessToken, key, rName)
+		resp := azureapi.CreateResourceGroup(token.AccessToken, key, rName)
+		resourceGroupId = resp.Name
 	}
 
-	newToken := azureapi.GetTokenWithTenantScope(token.RefreshToken)
-
+	//newToken := azureapi.GetTokenWithTenantScope(token.RefreshToken)
+	newToken := azureapi.AuthenticateWithTenant(tenantId)
+	// newToken := token
 	//Create Azure Resources
 	fmt.Println("Creating Azure Application")
 	time.Sleep(2 * time.Second)
-	fmt.Println(newToken.AccessToken)
-	appId := azureapi.CreateAzureApplication(newToken.AccessToken, repo)
+	appResponse := azureapi.CreateAzureApplication(newToken.AccessToken, repo)
 
-	//Create SP
+	//Create Service Principal
 	fmt.Println("Creating Service Principal")
 	time.Sleep(2 * time.Second)
-	azureapi.CreateServicePrincipal(newToken.AccessToken, appId)
+	servicePrincipal := azureapi.CreateServicePrincipal(newToken.AccessToken, appResponse.AppId)
 
 	//Create FIC
 	fmt.Println("Creating Federated Identity Credentials")
 	time.Sleep(2 * time.Second)
+	azureapi.CreateFIC(newToken.AccessToken, appResponse.Id, repo)
+
+	//Assign Role Definition
+	fmt.Println("Assigning Role Definition")
+	time.Sleep(2 * time.Second)
+	azureapi.AssignRoleDefinition(token.AccessToken, servicePrincipal.Id, key, resourceGroupId)
 
 }
 
