@@ -16,70 +16,296 @@ limitations under the License.
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
+	"github.com/3loka/gh-azure-oidc/azureapi"
+	"github.com/cli/go-gh"
+	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var cfgFile string
 
-// rootCmd represents the base command when called without any subcommands
-var rootCmd = &cobra.Command{
-	Use:   "gh-azure-oidc",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+func Execute() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-func Execute() {
-	cobra.CheckErr(rootCmd.Execute())
+type setOptions struct {
+	orgrepo string
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
 
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
+	var flag string
+	rootCmd.Flags().StringVarP(&flag, "useDefaults", "f", "noDefault", "Use Defaults to create a connection quickly")
+	rootCmd.Flags().Lookup("useDefaults").NoOptDefVal = "yes"
+	rootCmd.PersistentFlags().String("R", "", "org/repo")
+	rootCmd.PersistentFlags().String("useDefaults", "", "Use Defaults to create a connection quickly")
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gh-azure-oidc.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
-// initConfig reads in config file and ENV variables if set.
-func initConfig() {
-	if cfgFile != "" {
-		// Use config file from the flag.
-		viper.SetConfigFile(cfgFile)
+var rootCmd = &cobra.Command{
+	Use:   "gh azure-oic",
+	Short: "Connect Github to Azure for Workflow automation",
+	Long:  `Connect Github to Azure for Workflow automation`,
+	Run: func(cmd *cobra.Command, args []string) {
+		orgrepo, _ := cmd.Flags().GetString("R")
+		useDefaults, _ := cmd.Flags().GetString("useDefaults")
+		if useDefaults == "yes" {
+			fmt.Println("Use Defaults option is still work in progress, we are progressing with the non default flow for now")
+		}
+		runSetup(orgrepo, useDefaults)
+
+	},
+}
+
+func runSetup(orgrepo string, useDefaults string) {
+
+	client, err := gh.RESTClient(nil)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	var repoName = orgrepo
+	if repoName == "" {
+		response := struct{ Login string }{}
+		err = client.Get("user", &response)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Printf("running as %s\n", response.Login)
+
+		repoNameContent := promptContent{
+			fmt.Sprintf("Enter the org/repo? "),
+			fmt.Sprintf("Enter the org/repo? "),
+		}
+
+		repoName = promptGetInput(repoNameContent)
+	}
+
+	split := strings.Split(repoName, "/")
+
+	org := split[0]
+	repo := split[1]
+
+	// repo := flag.String("r", "default", "some name")
+	// fmt.Println(*repo)
+
+	fmt.Println("You will be redirected to Browser for login. Please complete the login and come back to the terminal")
+	time.Sleep(2 * time.Second)
+
+	token := azureapi.AuthenticateWithImplicitFlow()
+
+	// token := azureapi.Authenticate()
+
+	fmt.Println("Getting all tenants")
+
+	// var tenantId, tenantname, subsriptionId, subscriptionName, ResourceGroupId, ResourceGroupName string
+
+	tenantMap := azureapi.GetAllTenantsMap(token.AccessToken)
+
+	directoryContent := promptContent{
+		fmt.Sprintf("Choose your Azure Directory? "),
+		fmt.Sprintf("Choose your Azure Directory? "),
+	}
+
+	tenantArray := make([]string, 0, len(tenantMap))
+	for ind, _ := range tenantMap {
+		tenantArray = append(tenantArray, ind)
+	}
+
+	directoryName := promptGetSelect(directoryContent, tenantArray)
+	fmt.Println("Selected Directory: " + directoryName)
+	tenantId := tenantMap[directoryName]
+
+	subMap := azureapi.GetAllSubscriptions(token.AccessToken)
+
+	subcontent := promptContent{
+		fmt.Sprintf("Choose your Azure Subscription? "),
+		fmt.Sprintf("Choose your Azure Subscription? "),
+	}
+
+	subArr := make([]string, 0, len(subMap))
+	for ind, _ := range subMap {
+		subArr = append(subArr, ind)
+	}
+
+	subName := promptGetSelect(subcontent, subArr)
+	fmt.Println("Selected Subscription: " + subName)
+
+	key := subMap[subName]
+	createRg := promptContent{
+		fmt.Sprintf("Time to pick a resource group. Do you want create a new one?"),
+		fmt.Sprintf("Time to pick a resource group. Do you want create a new one?"),
+	}
+	createRgDecision := promptGetSelect(createRg, []string{"No", "Yes"})
+
+	var resourceGroupId = ""
+
+	if createRgDecision == "No" {
+		rgContent := promptContent{
+			fmt.Sprintf("Choose your Azure Resource Group associated to the subscription? "),
+			fmt.Sprintf("Choose your Azure Resource Group associated to the subscription? "),
+		}
+		rgMap := azureapi.GetResourceGroupsPerSubscription(token.AccessToken, key)
+
+		rgArr := make([]string, 0, len(rgMap))
+		for ind, _ := range rgMap {
+			rgArr = append(rgArr, ind)
+		}
+
+		rgName := promptGetSelect(rgContent, rgArr)
+		fmt.Println("Selected Resource Group: " + rgName)
+		resourceGroupId = rgName
 	} else {
-		// Find home directory.
-		home, err := os.UserHomeDir()
-		cobra.CheckErr(err)
+		rName := org + "-" + repo
+		rNameContent := promptContent{
+			fmt.Sprintf("Creating the Resource Group with Name: %v. Do you want to change the name?", rName),
+			fmt.Sprintf("Creating the Resource Group with Name: %v. Do you want to change the name?", rName),
+		}
 
-		// Search config in home directory with name ".gh-azure-oidc" (without extension).
-		viper.AddConfigPath(home)
-		viper.SetConfigType("yaml")
-		viper.SetConfigName(".gh-azure-oidc")
+		rNameDecision := promptGetSelect(rNameContent, []string{"No", "Yes"})
+		if rNameDecision == "Yes" {
+			rNameContent := promptContent{
+				fmt.Sprintf("Enter the Resource Group Name you want to create"),
+				fmt.Sprintf("Enter the Resource Group Name you want to create"),
+			}
+
+			rName = promptGetInput(rNameContent)
+		}
+		fmt.Println()
+		fmt.Println(">>Creating Resource Group " + rName)
+		resp := azureapi.CreateResourceGroup(token.AccessToken, key, rName)
+		resourceGroupId = resp.Name
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
+	//newToken := azureapi.GetTokenWithTenantScope(token.RefreshToken)
+	fmt.Println()
+	fmt.Println("You will be redirected to Browser to grant additional role for FIC creation. Please complete the login and come back to the terminal")
+	time.Sleep(2 * time.Second)
 
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
-	}
+	newToken := azureapi.AuthenticateWithTenant(tenantId)
+	// newToken := token
+	//Create Azure Resources
+	fmt.Println()
+	fmt.Println(">>Creating Azure Application")
+	// time.Sleep(2 * time.Second)
+	appResponse := azureapi.CreateAzureApplication(newToken.AccessToken, repo)
+
+	//Create Service Principal
+	fmt.Println()
+	fmt.Println(">>Creating Service Principal")
+	// time.Sleep(2 * time.Second)
+	servicePrincipal := azureapi.CreateServicePrincipal(newToken.AccessToken, appResponse.AppId)
+
+	//Create FIC
+	fmt.Println()
+	fmt.Println(">>Creating Federated Identity Credentials")
+	// time.Sleep(2 * time.Second)
+	azureapi.CreateFIC(newToken.AccessToken, appResponse.Id, repo)
+
+	//Assign Role Definition
+	fmt.Println()
+	fmt.Println(">>Assigning Role Definition")
+	// time.Sleep(2 * time.Second)
+	azureapi.AssignRoleDefinition(token.AccessToken, servicePrincipal.Id, key, resourceGroupId)
+
+	//Creating secrets
+	fmt.Println()
+	fmt.Printf(">>Creating Client Secrets in %s \n", orgrepo)
+	fmt.Printf("AZURE_CLIENT_ID: %s \n", appResponse.Id)
+	fmt.Printf("AZURE_TENANT_ID Client: %s \n", tenantId)
+	fmt.Printf("AZURE_SUBSCRIPTION_ID: %s \n", key)
+
+	createSecret("AZURE_CLIENT_ID", appResponse.Id, orgrepo)
+	createSecret("AZURE_TENANT_ID", tenantId, orgrepo)
+	createSecret("AZURE_SUBSCRIPTION_ID", key, orgrepo)
+
 }
+
+func createSecret(name string, value string, orgrepo string) {
+	args := []string{"secret", "set", name, "--body", value, "-R", orgrepo}
+	stdOut, _, err := gh.Exec(args...)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println(stdOut.String())
+}
+
+type promptContent struct {
+	errorMsg string
+	label    string
+}
+
+func promptGetInput(pc promptContent) string {
+	validate := func(input string) error {
+		if len(input) <= 0 {
+			return errors.New(pc.errorMsg)
+		}
+		return nil
+	}
+
+	templates := &promptui.PromptTemplates{
+		Prompt:  "{{ . }} ",
+		Valid:   "{{ . | green }} ",
+		Invalid: "{{ . | red }} ",
+		Success: "{{ . | bold }} ",
+	}
+
+	prompt := promptui.Prompt{
+		Label:     pc.label,
+		Templates: templates,
+		Validate:  validate,
+	}
+
+	result, err := prompt.Run()
+	if err != nil {
+		fmt.Printf("Prompt failed %v\n", err)
+		os.Exit(1)
+	}
+
+	// fmt.Printf("Input: %s\n", result)
+
+	return result
+}
+
+func promptGetSelect(pc promptContent, items []string) string {
+	index := -1
+	var result string
+	var err error
+
+	for index < 0 {
+		prompt := promptui.Select{
+			Label: pc.label,
+			Items: items,
+			// AddLabel: "Other",
+		}
+
+		index, result, err = prompt.Run()
+
+		if index == -1 {
+			items = append(items, result)
+		}
+	}
+
+	if err != nil {
+		fmt.Printf("Prompt failed %v\n", err)
+		os.Exit(1)
+	}
+
+	// fmt.Printf("Input: %s\n", result)
+
+	return result
+}
+
+// For more examples of using go-gh, see:
+// https://github.com/cli/go-gh/blob/trunk/example_gh_test.go
