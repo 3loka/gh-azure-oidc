@@ -19,6 +19,9 @@ gh azure-oidc [flags]
 
 
 Examples
+# Setup connection at a repo level (assuming user is in the git folder)
+$  gh azure-oidc
+
 # Setup connection at an organization level
 $ gh azure-oidc -o myorg
 
