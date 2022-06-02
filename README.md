@@ -1,5 +1,5 @@
 # gh-azure-oidc
-This is a Github CLI extension to setup a federated OIDC based connection between a repository, organization or an environment and Azure. 
+This is a Github CLI extension to setup a federated OIDC based connection between a repository, organization or an environment and Azure resource groups. 
 
 ## Usage instructions
 ```
@@ -20,7 +20,7 @@ gh azure-oidc [flags]
 
 Examples
 # Setup connection at a repo level (assuming user is in the git folder)
-$  gh azure-oidc
+$ gh azure-oidc
 
 # Setup connection at an organization level
 $ gh azure-oidc -o myorg
