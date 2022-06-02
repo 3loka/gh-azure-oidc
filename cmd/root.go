@@ -54,7 +54,7 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "gh azure-oic",
+	Use:   "gh azure-oidc",
 	Short: "Connect Github to Azure for Workflow automation",
 	Long:  `Connect Github to Azure for Workflow automation`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -62,6 +62,16 @@ var rootCmd = &cobra.Command{
 		env, _ := cmd.Flags().GetString("e")
 		orgFlag, _ := cmd.Flags().GetString("o")
 		useDefaults, _ := cmd.Flags().GetString("useDefaults")
+
+		var err error
+		if orgrepo == "" {
+			orgrepo, err = resolveRepository()
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		fmt.Printf("Setting up Azure Connection for %s\n\n", orgrepo)
 		if useDefaults == "yes" {
 			fmt.Println("Use Defaults option is still work in progress, we are progressing with the non default flow for now")
 		}
@@ -69,6 +79,45 @@ var rootCmd = &cobra.Command{
 
 	},
 }
+
+func resolveRepository() (string, error) {
+	args := []string{"repo", "view"}
+
+	sout, eout, err := gh.Exec(args...)
+
+	if err != nil {
+		if strings.Contains(eout.String(), "not a git repository") {
+			fmt.Println(err)
+			return "", errors.New("Try running this command from inside a git repository or with the -R flag")
+		}
+		return "", err
+	}
+	viewOut := strings.Split(sout.String(), "\n")[0]
+	repo := strings.TrimSpace(strings.Split(viewOut, ":")[1])
+
+	return repo, nil
+}
+
+// // gh shells out to gh, returning STDOUT/STDERR and any error
+// func gh(args ...string) (sout, eout bytes.Buffer, err error) {
+// 	ghBin, err := safeexec.LookPath("gh")
+// 	if err != nil {
+// 		err = fmt.Errorf("could not find gh. Is it installed? error: %w", err)
+// 		return
+// 	}
+
+// 	cmd := exec.Command(ghBin, args...)
+// 	cmd.Stderr = &eout
+// 	cmd.Stdout = &sout
+
+// 	err = cmd.Run()
+// 	if err != nil {
+// 		err = fmt.Errorf("failed to run gh. error: %w, stderr: %s", err, eout.String())
+// 		return
+// 	}
+
+// 	return
+// }
 
 func runSetup(orgrepo string, env string, orgFlag string, useDefaults string) {
 
@@ -200,38 +249,46 @@ func runSetup(orgrepo string, env string, orgFlag string, useDefaults string) {
 	// newToken := token
 	//Create Azure Resources
 	fmt.Println()
-	fmt.Println(">>Creating Azure Application")
+	fmt.Println("Step1: Creating Azure Resources")
+	// fmt.Println(">>Creating Azure Application")
 	// time.Sleep(2 * time.Second)
 	appResponse := azureapi.CreateAzureApplication(newToken.AccessToken, repo)
 
 	//Create Service Principal
-	fmt.Println()
-	fmt.Println(">>Creating Service Principal")
+	// fmt.Println()
+	// fmt.Println(">>Creating Service Principal")
 	// time.Sleep(2 * time.Second)
 	servicePrincipal := azureapi.CreateServicePrincipal(newToken.AccessToken, appResponse.AppId)
 
 	//Create FIC
-	fmt.Println()
-	fmt.Println(">>Creating Federated Identity Credentials")
+	// fmt.Println()
+	// fmt.Println(">>Creating Federated Identity Credentials")
 	// time.Sleep(2 * time.Second)
 	azureapi.CreateFIC(newToken.AccessToken, appResponse.Id, repo)
 
 	//Assign Role Definition
-	fmt.Println()
-	fmt.Println(">>Assigning Role Definition")
+	// fmt.Println()
+	// fmt.Println(">>Assigning Role Definition")
 	// time.Sleep(2 * time.Second)
 	azureapi.AssignRoleDefinition(token.AccessToken, servicePrincipal.Id, key, resourceGroupId)
 
 	//Creating secrets
+
+	// fmt.Println()
+	fmt.Println("All Azure Resources Created Succesfully !")
 	fmt.Println()
-	fmt.Printf(">>Creating Client Secrets in %s \n", orgrepo)
-	fmt.Printf("AZURE_CLIENT_ID: %s \n", appResponse.Id)
-	fmt.Printf("AZURE_TENANT_ID Client: %s \n", tenantId)
-	fmt.Printf("AZURE_SUBSCRIPTION_ID: %s \n", key)
+	fmt.Println("Step 2: Updating your Repository secrets")
+	// fmt.Printf("AZURE_CLIENT_ID: %s \n", appResponse.Id)
+	// fmt.Printf("AZURE_TENANT_ID Client: %s \n", tenantId)
+	// fmt.Printf("AZURE_SUBSCRIPTION_ID: %s \n", key)
 
 	createSecret("AZURE_CLIENT_ID", appResponse.Id, orgrepo, orgFlag, env)
 	createSecret("AZURE_TENANT_ID", tenantId, orgrepo, orgFlag, env)
 	createSecret("AZURE_SUBSCRIPTION_ID", key, orgrepo, orgFlag, env)
+	fmt.Println("Repository Updated Succesfully !")
+	fmt.Println()
+	fmt.Println("Succefully connected to Azure. You can now start executing your Actions Workflows !")
+	time.Sleep(2 * time.Second)
 
 }
 
@@ -245,12 +302,12 @@ func createSecret(name string, value string, orgrepo string, orgFlag string, env
 	} else {
 		args = append(args, "-R", orgrepo)
 	}
-	stdOut, _, err := gh.Exec(args...)
+	_, _, err := gh.Exec(args...)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Println(stdOut.String())
+	// fmt.Println(stdOut.String())
 }
 
 type promptContent struct {

@@ -278,7 +278,7 @@ func CreateAzureApplication(accessToken string, repoName string) models.AzureApp
 	// fmt.Println("response Body:", resp.Body)
 
 	if resp.StatusCode == 201 {
-		fmt.Printf("Azure Application with name %s Created Succesfully\n", repoName)
+		// fmt.Printf("Azure Application with name %s Created Succesfully\n", repoName)
 	} else {
 		fmt.Printf("Error while creating Azure Application %s\n", repoName)
 	}
@@ -316,7 +316,7 @@ func CreateServicePrincipal(accessToken string, appId string) models.ServicePrin
 	// print response status and body
 	// fmt.Println(resp.StatusCode)
 	if resp.StatusCode == 201 {
-		fmt.Printf("SP with AppID %s Created Succesfully\n", appId)
+		// fmt.Printf("SP with AppID %s Created Succesfully\n", appId)
 	} else {
 		fmt.Printf("Error while creating SP %s\n", appId)
 	}
@@ -365,7 +365,7 @@ func CreateFIC(accessToken string, appId string, repoName string) {
 	// print response status and body
 	// fmt.Println(resp.StatusCode)
 	if resp.StatusCode == 201 {
-		fmt.Printf("FIC with AppID %s Created Succesfully\n", appId)
+		// fmt.Printf("FIC with AppID %s Created Succesfully\n", appId)
 	} else {
 		fmt.Printf("Error while creating FIC %s\n", appId)
 	}
@@ -422,7 +422,7 @@ func AssignRoleDefinition(accessToken string, principalId string, subscriptionId
 	// print response status and body
 	// fmt.Println(resp.StatusCode)
 	if resp.StatusCode == 201 {
-		fmt.Printf("AssignRole with resourceGroupId %s Created Succesfully\n", resourceGroupId)
+		// fmt.Printf("AssignRole with resourceGroupId %s Created Succesfully\n", resourceGroupId)
 	} else {
 		fmt.Printf("Error while creating AssignRole with RG %s\n", resourceGroupId)
 	}
