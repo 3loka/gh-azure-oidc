@@ -46,7 +46,9 @@ func init() {
 	var flag string
 	rootCmd.Flags().StringVarP(&flag, "useDefaults", "f", "noDefault", "Use Defaults to create a connection quickly")
 	rootCmd.Flags().Lookup("useDefaults").NoOptDefVal = "yes"
-	rootCmd.PersistentFlags().String("R", "", "org/repo")
+	rootCmd.PersistentFlags().String("o", "", "Select a organization to connect to azure")
+	rootCmd.PersistentFlags().String("R", "", "Select a repository to connect to azure using the OWNER/REPO format")
+	rootCmd.PersistentFlags().String("e", "", "Select a environment under the repository")
 	rootCmd.PersistentFlags().String("useDefaults", "", "Use Defaults to create a connection quickly")
 
 }
@@ -57,16 +59,18 @@ var rootCmd = &cobra.Command{
 	Long:  `Connect Github to Azure for Workflow automation`,
 	Run: func(cmd *cobra.Command, args []string) {
 		orgrepo, _ := cmd.Flags().GetString("R")
+		env, _ := cmd.Flags().GetString("e")
+		orgFlag, _ := cmd.Flags().GetString("o")
 		useDefaults, _ := cmd.Flags().GetString("useDefaults")
 		if useDefaults == "yes" {
 			fmt.Println("Use Defaults option is still work in progress, we are progressing with the non default flow for now")
 		}
-		runSetup(orgrepo, useDefaults)
+		runSetup(orgrepo, env, orgFlag, useDefaults)
 
 	},
 }
 
-func runSetup(orgrepo string, useDefaults string) {
+func runSetup(orgrepo string, env string, orgFlag string, useDefaults string) {
 
 	client, err := gh.RESTClient(nil)
 	if err != nil {
@@ -225,14 +229,22 @@ func runSetup(orgrepo string, useDefaults string) {
 	fmt.Printf("AZURE_TENANT_ID Client: %s \n", tenantId)
 	fmt.Printf("AZURE_SUBSCRIPTION_ID: %s \n", key)
 
-	createSecret("AZURE_CLIENT_ID", appResponse.Id, orgrepo)
-	createSecret("AZURE_TENANT_ID", tenantId, orgrepo)
-	createSecret("AZURE_SUBSCRIPTION_ID", key, orgrepo)
+	createSecret("AZURE_CLIENT_ID", appResponse.Id, orgrepo, orgFlag, env)
+	createSecret("AZURE_TENANT_ID", tenantId, orgrepo, orgFlag, env)
+	createSecret("AZURE_SUBSCRIPTION_ID", key, orgrepo, orgFlag, env)
 
 }
 
-func createSecret(name string, value string, orgrepo string) {
-	args := []string{"secret", "set", name, "--body", value, "-R", orgrepo}
+func createSecret(name string, value string, orgrepo string, orgFlag string, env string) {
+	args := []string{"secret", "set", name, "--body", value}
+	if env != "" {
+		args = append(args, "--env", env)
+	}
+	if orgFlag != "" {
+		args = append(args, "--org", orgFlag)
+	} else {
+		args = append(args, "-R", orgrepo)
+	}
 	stdOut, _, err := gh.Exec(args...)
 	if err != nil {
 		fmt.Println(err)
